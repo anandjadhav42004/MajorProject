@@ -1,8 +1,24 @@
-# 🔎 Automated-Forensic-Detection
+# DARKLENS — Forensic OS v3.0
 
 ### Forensic Detection and Risk Assessment of Dark Patterns in E-Commerce Interfaces
 
 > **An intelligent multimodal forensic analysis platform for detecting, investigating, scoring, and documenting deceptive user-interface patterns across e-commerce websites.**
+
+- DARKLENS branding
+- Animated welcome screen
+- Live URL investigation workflow
+- Browser acquisition with Playwright
+- DOM and HTML forensic extraction
+- XPath and element metadata
+- Full-page screenshot evidence
+- Screenshot evidence vault
+- Multisignal dark-pattern correlation
+- Behavioral/persistence probing when browser access is available
+- Explainable Risk Analytics with concrete evidence examples
+- SHA-256 evidence sealing
+- Downloadable PDF forensic report
+- Dark and high-contrast light themes
+- Case management, Evidence Lab, Risk Analytics and Forensic Report views
 
 ---
 
@@ -691,9 +707,19 @@ npm start
 
 The frontend will normally open at:
 
+<<<<<<< HEAD
 ```text
 http://localhost:3000
 ```
+=======
+## Railway deployment
+
+Deploy the repository root as a Railway service. The root `requirements.txt` exposes the Python backend to Railpack, and `railway.toml` starts it with Gunicorn on Railway's `$PORT` and uses `/health` for the health check.
+
+The React frontend is a separate service: deploy `frontend/` as a static Node service and set `REACT_APP_API_URL` to the backend's public Railway URL before building. The included Windows `.bat` files are for local development only.
+
+## Notes
+>>>>>>> b057a0e (Update DARKLENS welcome experience)
 
 ---
 

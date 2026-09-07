@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 
-const API="http://localhost:5000";
-const welcome="WELCOME TO Automated-Forensic-Detection-and-Risk-Assessment-of-Dark-Patterns-in-E-Commerce-Interfaces";
+const API=process.env.REACT_APP_API_URL||"http://localhost:5000";
+const welcome="WELCOME TO DARKLENS";
 
 const seed=[
  {name:"False Urgency",score:94,severity:"CRITICAL",evidence:'"Only 2 left!" + countdown timer beside BUY NOW',explanation:["Urgency language is visible","Countdown reinforces time pressure","Placement is adjacent to the primary purchase CTA"],type:"Text + Visual + Behavior"},
@@ -33,12 +33,12 @@ function App(){
  const scan=async()=>{setPage("scan");try{const r=await fetch(`${API}/analyze`,{method:"POST",headers:{"Content-Type":"application/json"},body:JSON.stringify({url})});if(!r.ok)throw new Error();const d=await r.json();setData(d);setSelected(d.patterns[0]||seed[0]);notify("Live forensic evidence captured and sealed");setTimeout(()=>setPage("result"),700)}catch{setData(null);notify("Backend unavailable — demo evidence retained");setTimeout(()=>setPage("result"),700)}};
  const download=async()=>{if(!data){notify("Run an investigation first");return}try{const r=await fetch(`${API}/reports/${data.case_id}/download`);if(!r.ok)throw new Error();const blob=await r.blob();const a=document.createElement("a");a.href=URL.createObjectURL(blob);a.download=`${data.case_id}_forensic_report.pdf`;document.body.appendChild(a);a.click();a.remove();URL.revokeObjectURL(a.href);notify("Forensic report downloaded")}catch{notify("Report download failed — start the Flask backend")}};
  const evidenceUrl=data?`${API}/evidence/${data.case_id}/screenshot`:null;
- if(intro)return <div className="intro"><div className="intro-grid"/><div className="intro-core"><div className="logo-orbit"><span>AFD</span></div><p className="eyebrow">AUTOMATED FORENSIC INTELLIGENCE</p><h1>{welcome}</h1><div className="intro-line"/><p>Multimodal detection • Evidence capture • DOM forensics • Behavioral risk analysis</p><button onClick={()=>setIntro(false)}>ENTER FORENSIC CONSOLE →</button></div><div className="intro-foot">INITIALIZING AI ENGINE <span>●</span> BROWSER AGENT <span>●</span> EVIDENCE VAULT</div></div>;
+ if(intro)return <div className="intro welcome-screen"><div className="intro-grid"/><div className="welcome-noise"/><div className="intro-core"><div className="welcome-art" aria-hidden="true"><div className="art-halo"/><div className="aperture aperture-back"/><div className="aperture aperture-front"/><div className="aperture-core"><span>DL</span><i/></div><div className="art-scan"/></div><p className="eyebrow">AUTOMATED FORENSIC INTELLIGENCE</p><h1><span>WELCOME TO</span> DARKLENS</h1><div className="intro-line"/><p>See the signals hiding in plain sight.</p><button onClick={()=>setIntro(false)}>ENTER FORENSIC CONSOLE <b>→</b></button></div><div className="intro-foot"><span>01</span> INITIALIZING AI ENGINE <i/> <span>02</span> BROWSER AGENT <i/> <span>03</span> EVIDENCE VAULT</div></div>;
 
  const nav=[["command","◈","Command Center"],["scan","◎","New Investigation"],["cases","◌","Case Management"],["evidence","◇","Evidence Lab"],["analytics","◒","Risk Analytics"],["reports","▣","Forensic Report"]];
  return <div className="app">
   <aside className="sidebar">
-   <div className="brand"><div className="brandmark">AF</div><div><b>Automated-Forensic-Detection</b><span>FORENSIC OS / v3.0</span></div></div>
+  <div className="brand"><div className="brandmark">DL</div><div><b>DARKLENS</b><span>FORENSIC OS / v3.0</span></div></div>
    <nav>{nav.map(n=><button className={page===n[0]?"active":""} onClick={()=>setPage(n[0])} key={n[0]}><i>{n[1]}</i>{n[2]}</button>)}</nav>
    <div className="systems"><label>SYSTEMS</label><div><em/>AI ENGINE <b>LIVE</b></div><div><em/>BROWSER <b>LIVE</b></div><div><em/>EVIDENCE <b>READY</b></div></div>
    <button className="theme" onClick={()=>setTheme(theme==="dark"?"light":"dark")}>☼ {theme==="dark"?"LIGHT MODE":"DARK MODE"}</button>

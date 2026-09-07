@@ -250,7 +250,7 @@ def make_evidence(pattern, case_id, url, screenshot_path=None):
 
 @app.get("/health")
 def health():
-    return jsonify({"status":"operational","service":"Automated-Forensic-Detection","version":"3.0.0"})
+    return jsonify({"status":"operational","service":"DARKLENS","version":"3.0.0"})
 
 @app.post("/analyze")
 def analyze():
