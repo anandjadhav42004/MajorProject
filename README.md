@@ -1,6 +1,10 @@
-Forensic Detection and Risk Assessment of Dark Patterns in E-Commerce Interfaces
+# 🔎 Automated-Forensic-Detection
 
-**An intelligent multimodal forensic analysis platform for detecting, investigating, scoring, and documenting deceptive user-interface patterns across e-commerce websites.**
+### Forensic Detection and Risk Assessment of Dark Patterns in E-Commerce Interfaces
+
+> **An intelligent multimodal forensic analysis platform for detecting, investigating, scoring, and documenting deceptive user-interface patterns across e-commerce websites.**
+
+---
 
 ## 🧠 Overview
 
