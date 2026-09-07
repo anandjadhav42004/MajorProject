@@ -413,6 +413,7 @@ def download_report(case_id):
         from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
         from reportlab.lib.enums import TA_CENTER
         from reportlab.lib.units import mm
+        from xml.sax.saxutils import escape
         out = EVIDENCE / f"{case_id}_forensic_report.pdf"
         styles = getSampleStyleSheet()
         title = ParagraphStyle("Title2", parent=styles["Title"], fontSize=16, leading=20, alignment=TA_CENTER, textColor=colors.HexColor("#075bff"))
@@ -423,9 +424,15 @@ def download_report(case_id):
         story += [Paragraph(f"<b>Case:</b> {case['case_id']}<br/><b>Target:</b> {case['url']}<br/><b>Risk:</b> {case['risk_score']}/100 — {case['risk_label']}<br/><b>Confidence:</b> {case['confidence_score']}%<br/><b>Mode:</b> {case['mode']}", styles["BodyText"]), Spacer(1,12),
                   Paragraph("Executive Summary",styles["Heading2"]), Paragraph(case["summary"],styles["BodyText"]), Spacer(1,10),
                   Paragraph("Detected Patterns",styles["Heading2"])]
-        data=[["Pattern","Severity","Score","Evidence"]]+[[p["name"],p["severity"],str(p["score"])+"%",p["evidence"][:150]] for p in case["patterns"]]
-        table=Table(data,colWidths=[34*mm,24*mm,18*mm,100*mm],repeatRows=1)
-        table.setStyle(TableStyle([("BACKGROUND",(0,0),(-1,0),colors.HexColor("#0b1622")),("TEXTCOLOR",(0,0),(-1,0),colors.white),("GRID",(0,0),(-1,-1),0.4,colors.grey),("VALIGN",(0,0),(-1,-1),"TOP"),("FONTSIZE",(0,0),(-1,-1),8)]))
+        cell_style = ParagraphStyle("ReportCell", parent=styles["BodyText"], fontSize=7.5, leading=9, spaceAfter=0)
+        header_style = ParagraphStyle("ReportHeader", parent=cell_style, textColor=colors.white, fontName="Helvetica-Bold")
+        def cell(value, header=False):
+            return Paragraph(escape(str(value)), header_style if header else cell_style)
+
+        data = [[cell("Pattern", True), cell("Severity", True), cell("Score", True), cell("Evidence", True)]]
+        data += [[cell(p["name"]), cell(p["severity"]), cell(str(p["score"]) + "%"), cell(p["evidence"])] for p in case["patterns"]]
+        table=Table(data,colWidths=[34*mm,24*mm,18*mm,100*mm],repeatRows=1,splitByRow=1)
+        table.setStyle(TableStyle([("BACKGROUND",(0,0),(-1,0),colors.HexColor("#0b1622")),("GRID",(0,0),(-1,-1),0.4,colors.grey),("VALIGN",(0,0),(-1,-1),"TOP"),("LEFTPADDING",(0,0),(-1,-1),5),("RIGHTPADDING",(0,0),(-1,-1),5),("TOPPADDING",(0,0),(-1,-1),4),("BOTTOMPADDING",(0,0),(-1,-1),4)]))
         story += [table, Spacer(1,12), Paragraph("Risk Dimensions",styles["Heading2"])]
         for k,v in case["dimensions"].items():
             story.append(Paragraph(f"{k.replace('_',' ').title()}: <b>{v}/100</b>",styles["BodyText"]))
