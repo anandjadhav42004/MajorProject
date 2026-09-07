@@ -12,7 +12,80 @@ CORS(app)
 BASE = Path(__file__).resolve().parent
 EVIDENCE = BASE / "evidence"
 EVIDENCE.mkdir(exist_ok=True)
-CASES = {}
+import sqlite3
+
+DB_PATH = BASE / "darklens.db"
+
+def init_db():
+    with sqlite3.connect(DB_PATH) as conn:
+        conn.execute('''
+            CREATE TABLE IF NOT EXISTS cases (
+                id TEXT PRIMARY KEY,
+                url TEXT,
+                timestamp DATETIME,
+                risk_score INTEGER,
+                status TEXT,
+                data TEXT
+            )
+        ''')
+        conn.execute('''
+            CREATE TABLE IF NOT EXISTS findings (
+                id TEXT PRIMARY KEY,
+                case_id TEXT,
+                pattern TEXT,
+                confidence INTEGER,
+                risk TEXT,
+                explanation TEXT
+            )
+        ''')
+        conn.execute('''
+            CREATE TABLE IF NOT EXISTS evidence (
+                id TEXT PRIMARY KEY,
+                finding_id TEXT,
+                screenshot TEXT,
+                html TEXT,
+                xpath TEXT,
+                text TEXT,
+                timestamp DATETIME,
+                hash TEXT
+            )
+        ''')
+        conn.execute('''
+            CREATE TABLE IF NOT EXISTS behavior_events (
+                id TEXT PRIMARY KEY,
+                case_id TEXT,
+                action TEXT,
+                before_state TEXT,
+                after_state TEXT,
+                timestamp DATETIME
+            )
+        ''')
+init_db()
+
+def get_db_case(case_id):
+    with sqlite3.connect(DB_PATH) as conn:
+        row = conn.execute("SELECT data FROM cases WHERE id = ?", (case_id,)).fetchone()
+        if row:
+            return json.loads(row[0])
+    return None
+
+def save_db_case(case_id, data):
+    with sqlite3.connect(DB_PATH) as conn:
+        conn.execute("INSERT OR REPLACE INTO cases (id, url, timestamp, risk_score, status, data) VALUES (?, ?, ?, ?, ?, ?)",
+                     (case_id, data.get("url"), data.get("timestamp"), data.get("risk_score"), "COMPLETE", json.dumps(data)))
+        
+        for idx, p in enumerate(data.get("patterns", [])):
+            finding_id = f"FND-{case_id}-{idx}"
+            conn.execute("INSERT OR REPLACE INTO findings (id, case_id, pattern, confidence, risk, explanation) VALUES (?, ?, ?, ?, ?, ?)",
+                         (finding_id, case_id, p["name"], p["confidence"], p["severity"], json.dumps(p["explanation"])))
+            
+        for idx, e in enumerate(data.get("evidence", [])):
+            conn.execute("INSERT OR REPLACE INTO evidence (id, finding_id, screenshot, html, xpath, text, timestamp, hash) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+                         (e["id"], f"FND-{case_id}-{idx}", e.get("visual", {}).get("screenshot", ""), e.get("dom", {}).get("html", ""), e.get("dom", {}).get("xpath", ""), e.get("text", ""), e["timestamp"], e["hash"]))
+
+def get_all_db_cases():
+    with sqlite3.connect(DB_PATH) as conn:
+        return [json.loads(row[0]) for row in conn.execute("SELECT data FROM cases ORDER BY timestamp DESC").fetchall()]
 
 PATTERNS = {
     "False Urgency": {
@@ -50,6 +123,30 @@ PATTERNS = {
         "base": 58,
         "signals": ["stock quantity", "scarcity wording", "demand wording"],
         "rx": r"(only\s+\d+|few\s+left|limited\s+stock|in\s+demand|selling\s+fast|remaining)"
+    },
+    "Disguised Ads": {
+        "severity": "HIGH",
+        "base": 75,
+        "signals": ["sponsored content", "recommended language with ad markers"],
+        "rx": r"(sponsored|promoted|ad\b|advertisement|recommended\s+for\s+you)"
+    },
+    "Bait and Switch": {
+        "severity": "CRITICAL",
+        "base": 85,
+        "signals": ["price difference", "misleading product descriptions"],
+        "rx": r"(price\s+change|updated\s+price|was\s+\d+.*now\s+\d+|out\s+of\s+stock.*substitute)"
+    },
+    "Roach Motel": {
+        "severity": "HIGH",
+        "base": 80,
+        "signals": ["difficult cancellation", "contact support to cancel"],
+        "rx": r"(call\s+to\s+cancel|contact\s+support\s+to\s+unsubscribe|cancellation\s+policy|cannot\s+be\s+cancelled)"
+    },
+    "Obstruction": {
+        "severity": "MODERATE",
+        "base": 65,
+        "signals": ["UI friction", "hard to find settings"],
+        "rx": r"(advanced\s+settings|more\s+options|manage\s+preferences|continue\s+without\s+saving)"
     }
 }
 
@@ -122,72 +219,108 @@ def infer_pattern(pattern_name, text, nodes):
     low = text.lower()
     matches = list(re.finditer(p["rx"], low, re.I))
     evidence_text = ""
+    
+    confidence = 0
+    signals_breakdown = {}
+    
     if matches:
         m = matches[0]
         evidence_text = text[max(0,m.start()-100):min(len(text),m.end()+160)].strip()
+        confidence += 25
+        signals_breakdown["Language"] = "25/25"
+    else:
+        signals_breakdown["Language"] = "0/25"
+        
     relevant = []
     for n in nodes:
         blob = (n["text"] + " " + json.dumps(n["attributes"])).lower()
         if re.search(p["rx"], blob, re.I) or any(s in blob for s in ("timer","countdown","warranty","protection","subscribe","cart","basket","fee","only ")):
             relevant.append(n)
-    score = p["base"]
+            
     visual = []
     behavior = []
+    
     if relevant:
-        score += 3
+        confidence += 20
+        signals_breakdown["DOM context"] = "20/20"
         for n in relevant[:4]:
             visual.extend(n["visual_signals"])
-    if pattern_name in ("False Urgency","Scarcity Tactic"):
-        if re.search(r"\b\d{1,2}:\d{2}\b|\b\d+\s*(minutes?|seconds?)\b", text, re.I):
-            score += 4
-            behavior.append("timer/countdown signal")
-    if pattern_name == "Forced Action":
-        if any(n["tag"] == "input" and n["attributes"].get("type") == "checkbox" and ("checked" in n["attributes"] or n["attributes"].get("checked") in ("true","checked")) for n in nodes):
-            score += 7
-            behavior.append("pre-selected checkbox")
-    if pattern_name == "Sneak Into Basket":
-        if any("checked" in n["attributes"] for n in relevant):
-            score += 7
-            behavior.append("optional item appears pre-selected")
-    score = min(99, score)
+    else:
+        signals_breakdown["DOM context"] = "0/20"
+        
+    if visual:
+        confidence += 15
+        signals_breakdown["Visual prominence"] = "15/15"
+    else:
+        signals_breakdown["Visual prominence"] = "0/15"
+        
+    if relevant:
+        confidence += 15
+        signals_breakdown["CTA proximity"] = "15/15"
+    else:
+        signals_breakdown["CTA proximity"] = "0/15"
+        
+    if pattern_name in ("False Urgency","Scarcity Tactic") and re.search(r"\b\d{1,2}:\d{2}\b|\b\d+\s*(minutes?|seconds?)\b", text, re.I):
+        behavior.append("timer/countdown signal")
+        
+    if pattern_name == "Forced Action" and any(n["tag"] == "input" and n["attributes"].get("type") == "checkbox" and ("checked" in n["attributes"] or n["attributes"].get("checked") in ("true","checked")) for n in nodes):
+        behavior.append("pre-selected checkbox")
+        
+    if pattern_name == "Sneak Into Basket" and any("checked" in n["attributes"] for n in relevant):
+        behavior.append("optional item appears pre-selected")
+        
+    signals_breakdown["Persistence"] = "0/15"
+    
+    if matches:
+        confidence += 10
+        signals_breakdown["Historical/context"] = "10/10"
+    else:
+        signals_breakdown["Historical/context"] = "0/10"
+        
+    score = p["base"]
+    
     return {
         "name": pattern_name,
         "score": score,
-        "confidence": min(99, score + (4 if relevant else 0)),
+        "confidence": min(100, confidence),
         "severity": p["severity"],
         "evidence": evidence_text or (relevant[0]["text"] if relevant else p["signals"][0]),
-        "explanation": build_explanation(pattern_name, evidence_text, relevant, visual, behavior),
+        "explanation": build_explanation(pattern_name, evidence_text, relevant, visual, behavior, signals_breakdown, min(100, confidence)),
         "signals": p["signals"],
         "dom_matches": relevant[:5],
         "visual_signals": sorted(set(visual)),
         "behavior_signals": behavior,
+        "signals_breakdown": signals_breakdown,
         "type": "Text + DOM + Visual + Behavior"
     }
 
-def build_explanation(name, evidence, relevant, visual, behavior):
+def build_explanation(name, evidence, relevant, visual, behavior, breakdown, total_conf):
     reasons = []
     if evidence:
-        reasons.append(f'Textual cue: "{evidence[:180]}"')
-    if relevant:
-        reasons.append(f"{len(relevant)} relevant DOM element(s) matched the detector")
-    reasons.extend(visual[:2])
-    reasons.extend(behavior[:2])
-    if not reasons:
-        reasons.append("Classifier matched a known dark-pattern linguistic/structural signature")
+        reasons.append(f'✓ "{evidence[:40]}..." detected')
+    if visual:
+        reasons.append(f'✓ {visual[0]}')
+    if behavior:
+        reasons.append(f'✓ {behavior[0]}')
+        
+    reasons.append(f"Language: {breakdown['Language']}")
+    reasons.append(f"DOM context: {breakdown['DOM context']}")
+    reasons.append(f"Visual prominence: {breakdown['Visual prominence']}")
+    reasons.append(f"CTA proximity: {breakdown['CTA proximity']}")
+    reasons.append(f"Persistence: {breakdown['Persistence']}")
+    reasons.append(f"Total: {total_conf}/100")
+        
     return reasons
 
 def calculate_dimensions(patterns):
     if not patterns:
         return {"manipulation_severity":12,"user_impact":10,"financial_risk":8,"privacy_risk":5,"deception_probability":10,"persistence":8}
-    weights = {
-        "Manipulation Severity": "score",
-    }
     avg = statistics.mean(p["score"] for p in patterns)
     names = {p["name"] for p in patterns}
     return {
         "manipulation_severity": round(min(100, avg + 5)),
         "user_impact": round(min(100, avg + (10 if names & {"False Urgency","Confirm Shaming","Forced Action"} else 3))),
-        "financial_risk": round(min(100, avg + (12 if names & {"Hidden Costs","Sneak Into Basket"} else -5))),
+        "financial_risk": round(min(100, avg + (12 if names & {"Hidden Costs","Sneak Into Basket", "Bait and Switch"} else -5))),
         "privacy_risk": round(min(100, max(8, avg - (12 if "Privacy" not in names else 0)))),
         "deception_probability": round(min(100, avg + 7)),
         "persistence": round(min(100, avg + (5 if names & {"False Urgency","Scarcity Tactic"} else -4)))
@@ -210,27 +343,10 @@ def analyze_html(html, url):
     for name in PATTERNS:
         if re.search(PATTERNS[name]["rx"], text, re.I) or any(re.search(PATTERNS[name]["rx"], n["text"], re.I) for n in nodes):
             patterns.append(infer_pattern(name, text, nodes))
-    # Correlation bonus: urgency + timer/visual cue is stronger than text alone.
-    if any(p["name"] == "False Urgency" for p in patterns):
-        p = next(x for x in patterns if x["name"] == "False Urgency")
-        if p["behavior_signals"] or p["visual_signals"]:
-            p["score"] = min(99, p["score"] + 2)
-            p["confidence"] = min(99, p["confidence"] + 2)
     return soup, nodes, patterns
 
 def create_case_id():
     return "DP-" + datetime.now().strftime("%Y") + "-" + uuid.uuid4().hex[:6].upper()
-
-def demo_patterns():
-    # Used only if the target blocks automated retrieval. These are clearly labeled as inferred/demo evidence.
-    return [
-        {"name":"False Urgency","score":94,"confidence":94,"severity":"CRITICAL","evidence":"Only 2 left! • countdown timer • CTA-adjacent placement","explanation":["Urgency language detected","Countdown/timer signal inferred","Message is adjacent to primary CTA"],"signals":PATTERNS["False Urgency"]["signals"],"dom_matches":[],"visual_signals":["red/warning visual emphasis"],"behavior_signals":["timer/countdown signal"],"type":"Inferred Text + Visual + Behavior"},
-        {"name":"Hidden Costs","score":86,"confidence":91,"severity":"CRITICAL","evidence":"A convenience/service fee is introduced later in the purchase flow","explanation":["Fee language detected","Late-stage price change requires checkout comparison"],"signals":PATTERNS["Hidden Costs"]["signals"],"dom_matches":[],"visual_signals":[],"behavior_signals":["late-price-change check recommended"],"type":"Inferred Journey + Price"},
-        {"name":"Forced Action","score":78,"confidence":88,"severity":"HIGH","evidence":"Protection plan / subscription option appears pre-selected","explanation":["Optional add-on language detected","Pre-selection should be verified in live browser"],"signals":PATTERNS["Forced Action"]["signals"],"dom_matches":[],"visual_signals":[],"behavior_signals":["pre-selection check recommended"],"type":"Inferred DOM + Interaction"},
-        {"name":"Confirm Shaming","score":71,"confidence":84,"severity":"HIGH","evidence":"No, I prefer paying more.","explanation":["Guilt/shame opt-out wording detected"],"signals":PATTERNS["Confirm Shaming"]["signals"],"dom_matches":[],"visual_signals":[],"behavior_signals":[],"type":"Inferred Text"},
-        {"name":"Sneak Into Basket","score":64,"confidence":81,"severity":"HIGH","evidence":"Optional warranty/protection item appears to be added without explicit intent","explanation":["Basket/add-on language detected","Live interaction should verify state transition"],"signals":PATTERNS["Sneak Into Basket"]["signals"],"dom_matches":[],"visual_signals":[],"behavior_signals":["basket mutation check recommended"],"type":"Inferred Journey"},
-        {"name":"Scarcity Tactic","score":59,"confidence":79,"severity":"MODERATE","evidence":"Low-stock wording is positioned near the purchase decision","explanation":["Scarcity language detected","Visual placement increases decision pressure"],"signals":PATTERNS["Scarcity Tactic"]["signals"],"dom_matches":[],"visual_signals":["CTA-adjacent emphasis"],"behavior_signals":[],"type":"Inferred Text + Visual"}
-    ]
 
 def make_evidence(pattern, case_id, url, screenshot_path=None):
     raw = json.dumps({"case":case_id,"url":url,"pattern":pattern}, sort_keys=True).encode()
@@ -238,13 +354,26 @@ def make_evidence(pattern, case_id, url, screenshot_path=None):
     return {
         "id": "EV-" + uuid.uuid4().hex[:8].upper(),
         "case_id": case_id,
-        "pattern": pattern["name"],
-        "text": pattern["evidence"],
-        "xpath": (pattern.get("dom_matches") or [{}])[0].get("xpath","/html/body"),
-        "html": (pattern.get("dom_matches") or [{}])[0].get("html","<evidence inferred from page text/visual signals>"),
-        "visibility": True,
         "timestamp": datetime.now(timezone.utc).isoformat(),
-        "screenshot": f"/evidence/{case_id}/screenshot" if screenshot_path else None,
+        "url": url,
+        "pattern": pattern["name"],
+        "confidence": pattern["confidence"],
+        "risk": pattern["severity"],
+        "text": pattern["evidence"],
+        "dom": {
+            "tag": (pattern.get("dom_matches") or [{}])[0].get("tag", "div"),
+            "class": (pattern.get("dom_matches") or [{}])[0].get("attributes", {}).get("class", ""),
+            "xpath": (pattern.get("dom_matches") or [{}])[0].get("xpath","/html/body"),
+            "html": (pattern.get("dom_matches") or [{}])[0].get("html","<evidence inferred from page text/visual signals>")
+        },
+        "visual": {
+            "screenshot": f"/evidence/{case_id}/screenshot" if screenshot_path else None,
+            "bounding_box": {"x": 0, "y": 0, "width": 0, "height": 0}
+        },
+        "behavior": {
+            "reload_persistence": "same urgency content persisted after reload" in pattern["behavior_signals"],
+            "auto_selected": "pre-selected checkbox" in pattern["behavior_signals"] or "optional item appears pre-selected" in pattern["behavior_signals"]
+        },
         "hash": "sha256:" + digest
     }
 
@@ -270,7 +399,6 @@ def analyze():
     nodes = []
     patterns = []
 
-    # Prefer Playwright: real browser rendering + full-page screenshot.
     try:
         from playwright.sync_api import sync_playwright
         with sync_playwright() as pw:
@@ -282,21 +410,27 @@ def analyze():
             html = page.content()
             screenshot_path = EVIDENCE / f"{case_id}.png"
             page.screenshot(path=str(screenshot_path), full_page=True)
-            # A lightweight behavioral persistence probe: reload and compare a small set of urgency/timer text.
             first_text = page.locator("body").inner_text(timeout=5000)[:5000]
             page.reload(wait_until="domcontentloaded", timeout=25000)
             page.wait_for_timeout(1000)
             second_text = page.locator("body").inner_text(timeout=5000)[:5000]
             browser.close()
             soup, nodes, patterns = analyze_html(html, url)
+            
             if patterns and first_text == second_text and any(p["name"] in ("False Urgency","Scarcity Tactic") for p in patterns):
                 for p in patterns:
                     if p["name"] in ("False Urgency","Scarcity Tactic"):
                         p["behavior_signals"].append("same urgency content persisted after reload")
-                        p["confidence"] = min(99, p["confidence"] + 2)
+                        p["signals_breakdown"]["Persistence"] = "15/15"
+                        p["confidence"] = min(100, p["confidence"] + 15)
+                        
+                        p["explanation"] = build_explanation(
+                            p["name"], p["evidence"], p["dom_matches"], 
+                            p["visual_signals"], p["behavior_signals"], 
+                            p["signals_breakdown"], p["confidence"]
+                        )
     except Exception as e:
         browser_error = str(e)[:300]
-        # Fallback to requests so the system can still perform a real HTML/DOM scan.
         try:
             import requests
             r = requests.get(url, timeout=15, headers={"User-Agent":"Automated-Forensic-Detection/3.0"})
@@ -304,12 +438,11 @@ def analyze():
             html = r.text
             soup, nodes, patterns = analyze_html(html, url)
             mode = "live-html-no-browser"
-        except Exception:
-            mode = "inferred-demo"
-            patterns = demo_patterns()
+        except Exception as fallback_e:
+            return jsonify({"error": f"Acquisition failed. Target could not be reached or timed out: {str(fallback_e)[:150]}"}), 502
 
     if not patterns:
-        patterns = demo_patterns() if mode == "inferred-demo" else []
+        patterns = []
 
     risk = round(statistics.mean([p["score"] for p in patterns])) if patterns else 8
     confidence = round(statistics.mean([p["confidence"] for p in patterns])) if patterns else 20
@@ -342,16 +475,16 @@ def analyze():
         "integrity":"VERIFIED" if evidence else "NOT SEALED",
         "summary":f"{len(patterns)} dark-pattern signal(s) correlated across available text, DOM, visual and behavioral evidence."
     }
-    CASES[case_id] = result
+    save_db_case(case_id, result)
     return jsonify(result)
 
 @app.get("/cases")
 def cases():
-    return jsonify(list(CASES.values()))
+    return jsonify(get_all_db_cases())
 
 @app.get("/cases/<case_id>")
 def get_case(case_id):
-    case = CASES.get(case_id)
+    case = get_db_case(case_id)
     if not case:
         return jsonify({"error":"case not found"}),404
     return jsonify(case)
@@ -365,7 +498,7 @@ def screenshot(case_id):
 
 @app.get("/evidence/<case_id>/<evidence_id>")
 def evidence_item(case_id, evidence_id):
-    case = CASES.get(case_id)
+    case = get_db_case(case_id)
     if not case:
         return jsonify({"error":"case not found"}),404
     for item in case["evidence"]:
@@ -403,7 +536,7 @@ def build_report_html(case):
 
 @app.get("/reports/<case_id>/download")
 def download_report(case_id):
-    case = CASES.get(case_id)
+    case = get_db_case(case_id)
     if not case:
         return jsonify({"error":"case not found"}),404
     try:
@@ -443,7 +576,6 @@ def download_report(case_id):
         doc.build(story)
         return send_file(out, as_attachment=True, download_name=f"{case_id}_forensic_report.pdf", mimetype="application/pdf")
     except Exception as exc:
-        # HTML fallback is still a real downloadable forensic artifact.
         out = EVIDENCE / f"{case_id}_forensic_report.html"
         out.write_text(build_report_html(case), encoding="utf-8")
         return send_file(out, as_attachment=True, download_name=f"{case_id}_forensic_report.html", mimetype="text/html")
@@ -455,4 +587,4 @@ def hash_evidence():
     return jsonify({"algorithm":"SHA-256","hash":sha256_bytes(raw),"status":"SEALED"})
 
 if __name__ == "__main__":
-    app.run(host="0.0.0.0", port=5000, debug=True)
+    app.run(host="0.0.0.0", port=5001, debug=True)

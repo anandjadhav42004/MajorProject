@@ -4,3 +4,5 @@ backend/evidence/*.png
 backend/evidence/*.pdf
 backend/evidence/*.html
 .env
+backend/darklens.db
+frontend/build/
