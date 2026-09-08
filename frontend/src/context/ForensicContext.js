@@ -31,9 +31,9 @@ export const ForensicProvider = ({ children }) => {
     return () => clearTimeout(t);
   }, []);
 
-  const notify = (msg) => {
+  const notify = (msg, duration = 3000) => {
     setToast(msg);
-    setTimeout(() => setToast(""), 2500);
+    setTimeout(() => setToast(""), duration);
   };
 
   const scan = async () => {
@@ -45,8 +45,8 @@ export const ForensicProvider = ({ children }) => {
         body: JSON.stringify({ url })
       });
       if (!r.ok) {
-        const err = await r.json();
-        throw new Error(err.error || "Acquisition failed");
+        const err = await r.json().catch(() => ({}));
+        throw new Error(err.error || `Server Error (${r.status})`);
       }
       const d = await r.json();
       setData(d);
@@ -55,8 +55,8 @@ export const ForensicProvider = ({ children }) => {
       setTimeout(() => setPage("result"), 700);
     } catch (e) {
       setData(null);
-      notify(`Acquisition Error: ${e.message}`);
-      setTimeout(() => setPage("command"), 700);
+      notify(`⚠️ ${e.message}`, 6000);
+      setTimeout(() => setPage("command"), 1200);
     }
   };
 

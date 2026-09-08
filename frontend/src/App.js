@@ -90,7 +90,7 @@ function AppContent() {
           {page === "reports" && <ReportDashboard />}
         </div>
       </main>
-      {toast && <div className="toast">✓ {toast}</div>}
+      {toast && <div className="toast">{toast.startsWith("⚠️") ? toast : `✓ ${toast}`}</div>}
     </div>
   );
 }

@@ -437,13 +437,20 @@ def analyze():
         browser_error = str(e)[:300]
         try:
             import requests
-            r = requests.get(url, timeout=15, headers={"User-Agent":"Automated-Forensic-Detection/3.0"})
+            headers = {
+                "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/124.0.0.0 Safari/537.36",
+                "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8",
+                "Accept-Language": "en-US,en;q=0.9",
+            }
+            r = requests.get(url, timeout=15, headers=headers)
+            if r.status_code == 403 or "Just a moment..." in r.text or "challenge-platform" in r.text:
+                return jsonify({"error": "Target site is protected by Cloudflare / Anti-Bot Captcha (403 Forbidden). Try standard shopping/e-commerce or content sites."}), 403
             r.raise_for_status()
             html = r.text
             soup, nodes, patterns = analyze_html(html, url)
             mode = "live-html-no-browser"
         except Exception as fallback_e:
-            return jsonify({"error": f"Acquisition failed. Target could not be reached or timed out: {str(fallback_e)[:150]}"}), 502
+            return jsonify({"error": f"Target could not be reached: {str(fallback_e)[:150]}"}), 502
 
     if not patterns:
         patterns = []
