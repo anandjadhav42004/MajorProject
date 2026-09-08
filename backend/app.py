@@ -377,6 +377,10 @@ def make_evidence(pattern, case_id, url, screenshot_path=None):
         "hash": "sha256:" + digest
     }
 
+@app.get("/")
+def index():
+    return jsonify({"status":"operational","service":"DARKLENS-API","version":"3.0.0","health":"/health","cases":"/cases"})
+
 @app.get("/health")
 def health():
     return jsonify({"status":"operational","service":"DARKLENS","version":"3.0.0"})

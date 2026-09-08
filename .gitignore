@@ -6,3 +6,7 @@ backend/evidence/*.html
 .env
 backend/darklens.db
 frontend/build/
+venv/
+backend/venv/
+*.pyc
+
