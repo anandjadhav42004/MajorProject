@@ -3,7 +3,12 @@ import { useForensic } from '../context/ForensicContext';
 
 function EvidenceLab() {
   const { data, selected, findings, evidenceUrl, tab, setTab } = useForensic();
+  const [imgError, setImgError] = React.useState(false);
   const current = selected || findings[0];
+
+  React.useEffect(() => {
+    setImgError(false);
+  }, [evidenceUrl]);
 
   return (
     <div className="evidence-layout">
@@ -13,11 +18,30 @@ function EvidenceLab() {
           <b>{current?.name || "AWAITING SCAN"}</b>
           <span>{data?.mode || "STANDBY"}</span>
         </div>
-        {evidenceUrl ? (
-          <img className="real-shot" src={evidenceUrl} alt="Captured website evidence" />
+        {evidenceUrl && !imgError ? (
+          <img 
+            className="real-shot" 
+            src={evidenceUrl} 
+            alt="Captured website evidence" 
+            onError={() => setImgError(true)}
+          />
         ) : (
-          <div className="demo-shot" style={{textAlign:"center", color:"var(--muted)"}}>
-            {data ? "No Visual Acquisition Available. Fallback request method was used." : "Awaiting Investigation. Enter a URL in the Command Center to begin."}
+          <div className="demo-shot forensic-fallback">
+            <div className="fallback-badge">● VISUAL EVIDENCE STATUS: STANDBY / FALLBACK</div>
+            <h4>Visual evidence unavailable — browser capture fallback active.</h4>
+            <p>
+              {data 
+                ? `Target DOM structure and text forensic signals were acquired via HTTP engine (${data?.dom_node_count || 0} DOM nodes analyzed). Visual rasterization requires active headless browser context.`
+                : "Awaiting investigation. Run an investigation from the Command Center to analyze dark patterns."}
+            </p>
+            {data && (
+              <div className="fallback-spec-grid">
+                <div><span>TARGET DOMAIN</span><b>{data.url}</b></div>
+                <div><span>ACQUISITION MODE</span><b>{data.mode}</b></div>
+                <div><span>EVIDENCE INTEGRITY</span><b>{data.integrity || "SEALED"}</b></div>
+                <div><span>RISK CLASSIFICATION</span><b>{data.risk_score}/100 ({data.risk_label})</b></div>
+              </div>
+            )}
           </div>
         )}
       </div>

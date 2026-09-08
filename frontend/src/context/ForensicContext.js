@@ -12,11 +12,14 @@ export const ForensicProvider = ({ children }) => {
   const [intro, setIntro] = useState(true);
   const [theme, setTheme] = useState(localStorage.getItem("afd-theme") || "dark");
   const [page, setPage] = useState("command");
-  const [url, setUrl] = useState("https://example.com/product/123");
+  const [url, setUrl] = useState("https://quotes.toscrape.com");
   const [data, setData] = useState(null);
   const [selected, setSelected] = useState(null);
   const [tab, setTab] = useState("DOM");
   const [toast, setToast] = useState("");
+  const [casesList, setCasesList] = useState([]);
+  const [loadingCases, setLoadingCases] = useState(false);
+  const [isScanning, setIsScanning] = useState(false);
 
   const findings = data?.patterns || [];
   const risk = data?.risk_score ?? 0;
@@ -31,18 +34,47 @@ export const ForensicProvider = ({ children }) => {
     return () => clearTimeout(t);
   }, []);
 
+  const fetchCases = async () => {
+    setLoadingCases(true);
+    try {
+      const r = await fetch(`${API}/cases`);
+      if (r.ok) {
+        const list = await r.json();
+        setCasesList(Array.isArray(list) ? list : []);
+      }
+    } catch (e) {
+      console.error("Failed to load cases:", e);
+    } finally {
+      setLoadingCases(false);
+    }
+  };
+
+  useEffect(() => {
+    fetchCases();
+  }, []);
+
   const notify = (msg, duration = 3000) => {
     setToast(msg);
     setTimeout(() => setToast(""), duration);
   };
 
-  const scan = async () => {
+  const scan = async (targetUrl) => {
+    if (isScanning) return;
+    const scanUrl = targetUrl || url;
+    if (!scanUrl) {
+      notify("⚠️ Please enter a target URL");
+      return;
+    }
+    if (targetUrl) {
+      setUrl(targetUrl);
+    }
+    setIsScanning(true);
     setPage("scan");
     try {
       const r = await fetch(`${API}/analyze`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ url })
+        body: JSON.stringify({ url: scanUrl })
       });
       if (!r.ok) {
         const err = await r.json().catch(() => ({}));
@@ -52,12 +84,24 @@ export const ForensicProvider = ({ children }) => {
       setData(d);
       setSelected(d.patterns?.[0] || null);
       notify("Live forensic evidence captured and sealed");
+      fetchCases();
       setTimeout(() => setPage("result"), 700);
     } catch (e) {
       setData(null);
       notify(`⚠️ ${e.message}`, 6000);
       setTimeout(() => setPage("command"), 1200);
+    } finally {
+      setIsScanning(false);
     }
+  };
+
+  const openCase = (caseObj) => {
+    if (!caseObj) return;
+    setData(caseObj);
+    setSelected(caseObj.patterns?.[0] || null);
+    if (caseObj.url) setUrl(caseObj.url);
+    setPage("result");
+    notify(`Loaded case ${caseObj.case_id || caseObj.id}`);
   };
 
   const download = async () => {
@@ -95,7 +139,9 @@ export const ForensicProvider = ({ children }) => {
     toast, setToast,
     findings, risk,
     notify, scan, download,
-    evidenceUrl, API
+    evidenceUrl, API,
+    casesList, loadingCases, fetchCases,
+    isScanning, openCase
   };
 
   return (

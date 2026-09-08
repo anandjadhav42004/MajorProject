@@ -4,7 +4,7 @@ import Stat from './Stat';
 import FindingGrid from './FindingGrid';
 
 function CommandCenter() {
-  const { url, setUrl, scan, risk, data, findings } = useForensic();
+  const { url, setUrl, scan, risk, data, findings, isScanning } = useForensic();
 
   return (
     <>
@@ -14,9 +14,50 @@ function CommandCenter() {
           <h2>Find the manipulation <em>behind the interface.</em></h2>
           <p>Analyze text, buttons, visual hierarchy, DOM structure, pop-ups, prices and interaction behavior. Every finding becomes an evidence-backed forensic record.</p>
           <div className="scanbar">
-            <input value={url} onChange={e => setUrl(e.target.value)} placeholder="https://shop.example/product" />
-            <button onClick={scan}>START INVESTIGATION ↗</button>
+            <input 
+              value={url} 
+              onChange={e => setUrl(e.target.value)} 
+              placeholder="https://shop.example/product" 
+              disabled={isScanning}
+            />
+            <button onClick={() => scan()} disabled={isScanning} style={{minWidth: "170px"}}>
+              {isScanning ? "Analyzing DOM & Visuals..." : "START INVESTIGATION ↗"}
+            </button>
           </div>
+          
+          <div className="quick-demos">
+            <span className="quick-label">Quick demo — no manual URL required:</span>
+            <div className="quick-btn-group">
+              <button 
+                type="button" 
+                className="quick-btn"
+                onClick={() => scan("https://books.toscrape.com")}
+                disabled={isScanning}
+                title="Scan realistic mock store with pricing and catalog"
+              >
+                ⚡ Demo Store
+              </button>
+              <button 
+                type="button" 
+                className="quick-btn"
+                onClick={() => scan("https://quotes.toscrape.com")}
+                disabled={isScanning}
+                title="Scan quote & catalog site for urgency patterns"
+              >
+                ⚡ Urgency Example
+              </button>
+              <button 
+                type="button" 
+                className="quick-btn"
+                onClick={() => scan("https://example.com")}
+                disabled={isScanning}
+                title="Scan clean baseline domain"
+              >
+                ⚡ Clean Site
+              </button>
+            </div>
+          </div>
+
           <div className="chips">
             <span>TEXT</span><span>DOM</span><span>VISUAL</span><span>BEHAVIOR</span><span>SCREENSHOT</span><span>HASH</span>
           </div>
